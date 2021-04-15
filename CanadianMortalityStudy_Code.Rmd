@@ -12,8 +12,7 @@ Loading in Data
 # Load in Death_by_marital status
 # This is the dataset with the information about deaths
 library(tidyverse)
-setwd("C:/Users/Cam McMullen/Documents/Carleton_classes/Carleton_4th_year/Semester2/HonoursProject")
-deaths_marital <- read_csv("Data/Deaths_by_Marital_Status.csv") 
+deaths_marital <- read_csv("Deaths_by_Marital_Status.csv") 
 ```
 
 
@@ -301,8 +300,8 @@ grid.arrange(age_plot, age_time_plot, ncol=2)
 ```{r}
 library(gridExtra) # plots
 
-# Graph 3
-# Death rates by age group
+# Graph 4
+# Death rates by Marital Status
 
 #data plot 1
 marital_data1 <- data %>%
@@ -391,12 +390,6 @@ Linear Regression
 
 
 ```{r}
-# somehow create a function that gets these linear models for each risk class
-# 1. create function that filters data
-# 2. create function that creates linear model for filtered data
-# 3. create function that circulates through, stores linear models and respective sum of squared residuals
-
-# compare to sum of squared residuals of large model
 
 custom_filter <- function(geo, age, sex, ms, data){
   data %>%
@@ -414,10 +407,8 @@ get_lm_model <- function(geo, age, sex, ms, data){
 
 
 ```{r}
-## using the better model to predict deaths in the future
-
-# training data will be from 1991-2015
-# testing from 2016 - 2018
+# training data will be from 1991-2017
+# testing is 2018
 
 Train_data <- data %>%
   filter(Year < 2018)
@@ -477,7 +468,6 @@ sexes <- unique(Test_data$Sex)
 
 
 ```{r}
-# Expected_Deaths <- array(NA, dim=c(length(geos), length(ages), length(ms_s) , length(sexes)))
 
 df <- data.frame(matrix(vector(), 0, 6,
                 dimnames=list(c(), c("Year", "GEO", "Age", "Sex", "marital_Status", "ExpectedDeaths"))),
