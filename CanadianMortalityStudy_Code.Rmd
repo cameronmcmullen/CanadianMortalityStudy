@@ -1,0 +1,989 @@
+---
+title: "Honours Project"
+author: "Cameron McMullen"
+date: "08/03/2021"
+output: html_document
+---
+
+
+Loading in Data
+
+```{r, message=FALSE}
+# Load in Death_by_marital status
+# This is the dataset with the information about deaths
+library(tidyverse)
+setwd("C:/Users/Cam McMullen/Documents/Carleton_classes/Carleton_4th_year/Semester2/HonoursProject")
+deaths_marital <- read_csv("Data/Deaths_by_Marital_Status.csv") 
+```
+
+
+```{r, message=FALSE}
+# Libraries for data cleaning
+
+library(qdap)
+library(stringr)
+library(tidyverse)
+```
+
+
+```{r, message=FALSE}
+deaths_marital <- deaths_marital %>%
+  dplyr::select(c('REF_DATE', 'GEO', 'Age at time of death', 'Sex', 'Marital status of deceased', 'UOM_ID', 'VALUE')) %>%
+  rename(Age = 'Age at time of death',
+         Marital_Status = 'Marital status of deceased',
+         Deaths = 'VALUE') %>%
+  transform(GEO = (beg2char(GEO, ","))) %>%
+  mutate(GEO = replace(GEO, GEO == 'Unknown province or territory of residence', 'Unknown')) %>%
+  mutate(Marital_Status = replace(Marital_Status, Marital_Status == 'Total, marital status of deceased', 'Total')) %>%
+  transform(Marital_Status = str_extract(Marital_Status, '\\b[^,]+$')) %>%
+  mutate(Marital_Status = replace(Marital_Status, Marital_Status == 'single (never married)', 'Single')) %>%
+  mutate(Marital_Status = replace(Marital_Status, Marital_Status == 'not stated', 'Unknown')) %>%
+  transform(Sex = str_extract(Sex, '\\w*')) %>%
+  transform(Age = str_extract(Age, '\\b[^,]+$')) %>%
+  transform(Age = str_replace(Age, " to ", "-")) %>%
+  transform(Age = str_replace(Age, "under ", "<")) %>%
+  transform(Age = str_replace(Age, " years and over", "+")) %>%
+  transform(Age = str_replace(Age, " ages", "")) %>%
+  transform(Age = str_replace(Age, "years", ""))%>%
+  transform(Age = str_replace(Age, " ", "")) %>%
+  mutate(Sex = case_when(Sex=="Males" ~ "Male",
+                         Sex=="Females" ~ "Female"))
+```
+
+
+```{r, message=FALSE}
+# Load in the population data
+
+male_population <- read_csv("male_population.csv")
+female_population <- read_csv("female_population.csv")
+```
+
+
+```{r}
+# Clean the male population data
+male_population <- male_population %>% 
+  mutate(Age = word(Age, 1)) %>%
+  mutate(Age = findInterval(Age, c(15, 45, 65, 75, 85))) %>%
+  group_by(Age) %>%
+    summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%
+  mutate(Age  = case_when(Age==0 ~ "<15",
+                          Age==1 ~ "15-44",
+                          Age==2 ~ "45-64",
+                          Age==3 ~ "65-74",
+                          Age==4 ~ "75-84",
+                          Age==5 ~ "85+"
+)) %>%
+  add_column(Sex = "Male")
+
+
+# Clean the Female population data in a similar way
+female_population <- female_population %>%
+  mutate(Age = word(Age, 1)) %>%
+  mutate(Age = findInterval(Age, c(15, 45, 65, 75, 85))) %>%
+  group_by(Age) %>%
+    summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%
+  mutate(Age  = case_when(Age==0 ~ "<15",
+                          Age==1 ~ "15-44",
+                          Age==2 ~ "45-64",
+                          Age==3 ~ "65-74",
+                          Age==4 ~ "75-84",
+                          Age==5 ~ "85+"
+)) %>%
+  add_column(Sex = "Female")
+
+# Create one populations dataset that combine both the male and female population data
+populations <- rbind(male_population, female_population)
+populations <- populations[, c(1, 32, 2:31)]
+head(populations)
+```
+
+```{r, message = FALSE}
+# Transform the years from being headers to being their own column
+populations <- populations %>%
+  gather(REF_DATE, Population, "1991":"2020")
+
+head(populations)
+```
+
+
+```{r}
+head(deaths_marital)
+```
+
+
+```{r}
+deaths_marital <- deaths_marital %>%
+  dplyr::select(c(REF_DATE, GEO, Age, Sex, Marital_Status, Deaths)) %>%
+  dplyr::filter(Age != "all", Age != "notstated", !(is.na(Sex)),
+                GEO != "Canada", GEO != "Northwest Territories including Nunavut",
+                Marital_Status != "Total") %>%
+  group_by(REF_DATE, GEO, Age, Sex, Marital_Status) %>%
+      summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) 
+
+head(deaths_marital)
+```
+
+```{r}
+deaths_marital$REF_DATE <- as.character(deaths_marital$REF_DATE)
+```
+
+
+```{r}
+data <- left_join(deaths_marital, populations)
+data$REF_DATE <- as.numeric(deaths_marital$REF_DATE)
+head(data)
+```
+
+```{r, message=FALSE}
+smoking_percents <- read_csv("Smoking_historical.csv")
+```
+
+
+```{r}
+smoking_percents <- smoking_percents %>%
+  rename(Male = "Males", Female = "Females") %>%
+  gather(Sex, Smoking_percent, "Male":"Female") %>%
+  dplyr::select(c(Year, Sex, Smoking_percent)) %>%
+  rename(REF_DATE = "Year") %>%
+  arrange(REF_DATE)
+  
+```
+
+
+```{r}
+data <- left_join(data, smoking_percents)
+```
+
+
+```{r}
+data <- data %>%
+            rename(Year = "REF_DATE")
+```
+
+```{r}
+head(data)
+```
+
+
+# Visualizations
+
+```{r}
+fancy_scientific <- function(l) {
+     # turn in to character string in scientific notation
+     l <- format(l, scientific = TRUE)
+     # quote the part before the exponent to keep all the digits
+     l <- gsub("^(.*)e", "'\\1'e", l)
+     # turn the 'e+' into plotmath format
+     l <- gsub("e", "%*%10^", l)
+     # return this as an expression
+     parse(text=l)
+}
+
+data %>%
+  group_by(Year, Marital_Status, GEO, Age) %>%
+  summarise(population = sum(Population)) %>%
+  group_by(Year, Age) %>%
+  summarise(Population = mean(population)) %>%
+  ggplot(aes(x = Year, y = Population, col = factor(Age))) +
+  facet_grid(Age ~ ., scales = "free_y") + 
+  geom_line() + 
+  geom_point() + 
+  scale_y_continuous(labels=fancy_scientific) 
+  labs(title = "Population Trends Over time, by Age",
+       x = "Year",
+       y = "Population",
+       color = "Age") +
+  theme(legend.position = "none", title = element_text(size = 10))
+  
+  
+```
+
+
+```{r}
+graph1 <- data %>%
+  group_by(Year, Marital_Status, GEO) %>%
+  summarise(Deaths = sum(Deaths), population = sum(Population)) %>%
+  group_by(Year) %>%
+  summarise(Deaths = sum(Deaths), Population = mean(population), deaths_per_100k = Deaths /      (Population + Deaths) * 100000)
+
+global_average <- sum(as.numeric(graph1$Deaths)) / (sum(as.numeric(graph1$Population)) + sum(as.numeric(graph1$Deaths))) * 100000
+
+graph1 %>% 
+  ggplot(aes(x = Year, y = deaths_per_100k)) + 
+  geom_line(col = "deepskyblue3", size = 1) + 
+  geom_point(col = "deepskyblue3", size = 3) + 
+  geom_hline(yintercept = global_average, linetype = 2, color = "grey35", size = 1) +
+  labs(title = "Canada Deaths (per 100k)",
+       subtitle = "Trend over time, 1991 - 2018.",
+       x = "Year",
+       y = "Deaths per 100k") + 
+  scale_x_continuous(breaks = seq(1991, 2018, 2))
+
+  
+```
+
+
+```{r}
+# Graph 2
+# Death rates per 100000 by gender
+
+graph2 <- data %>%
+  group_by(Year, Marital_Status, GEO, Sex) %>%
+  summarise(Deaths = sum(Deaths), population = sum(Population))%>%
+  group_by(Year, Sex) %>%
+  summarise(Deaths = sum(Deaths), Population = mean(population), deaths_per_100k = Deaths /      (Population + Deaths) * 100000)
+
+
+graph2 %>%
+  ggplot(aes(x = Year, y = deaths_per_100k, colour=Sex)) + 
+  geom_line() +
+  labs(title = "Deaths (per 100k) by Sex",
+       subtitle = "Trend over time, 1991 - 2018.",
+       x = "Year",
+       y = "Deaths per 100k") + 
+  scale_x_continuous(breaks = seq(1991, 2018, 2))
+  
+```
+
+
+
+```{r}
+library(gridExtra) # plots
+
+# Graph 3
+# Death rates by age group
+
+#data plot 1
+age_data1 <- data %>%
+  group_by(Year, Marital_Status, GEO, Age) %>%
+  summarise(Deaths = sum(Deaths), population = sum(Population))%>%
+  group_by(Year, Age) %>%
+  summarise(Deaths = sum(Deaths), Population = mean(population))%>%
+  group_by(Age) %>%
+  summarise(Deaths = mean(Deaths), Population = mean(Population), deaths_per_100k = Deaths /      (Population + Deaths) * 100000)
+
+# Plot 1
+
+age_plot <- ggplot(age_data1, aes(x = Age, y = deaths_per_100k, fill = Age))+
+  geom_bar(stat = "identity")+
+  labs(title = "Canadian Deaths (per 100k), by Age",
+       x = "Age",
+       y = "Deaths per 100k",
+       fill = "Age") + 
+theme(legend.position = "none", title = element_text(size = 10))
+
+# Data graph 2
+
+age_time <- data %>%
+  group_by(Year, Marital_Status, GEO, Age) %>%
+  summarise(Deaths = sum(Deaths), population = sum(Population))%>%
+  group_by(Year, Age) %>%
+  summarise(Deaths = sum(Deaths), Population = mean(population), deaths_per_100k = Deaths /      (Population + Deaths) * 100000)
+
+# Plot 2
+
+age_time_plot <- ggplot(age_time, aes(x = Year, y = deaths_per_100k, col = factor(Age))) +
+facet_grid(Age ~ ., scales = "free_y") + 
+geom_line() + 
+geom_point() + 
+labs(title = "Trends Over time, by Age",
+     x = "Year",
+     y = "Deaths per 100k",
+     color = "Age") +
+theme(legend.position = "none", title = element_text(size = 10))
+
+grid.arrange(age_plot, age_time_plot, ncol=2)
+```
+
+
+# Deaths by marital Status
+
+```{r}
+library(gridExtra) # plots
+
+# Graph 3
+# Death rates by age group
+
+#data plot 1
+marital_data1 <- data %>%
+  group_by(Year, Marital_Status) %>%
+  summarise(Deaths = sum(Deaths)) %>%
+  group_by(Marital_Status) %>%
+  summarise(Deaths = mean(Deaths))
+
+# Plot 1
+
+marital_plot <- ggplot(marital_data1, aes(x = Marital_Status, y = Deaths, fill = Marital_Status))+
+  geom_bar(stat = "identity")+
+  labs(title = "Canadian Deaths, by Marital Status",
+       x = "Marital Status",
+       y = "Average Deaths per Year",
+       fill = "Marital_Staus") + 
+theme(legend.position = "none", title = element_text(size = 10),
+      axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=.5))
+
+# Data graph 2
+
+marital_time <- data %>%
+  group_by(Year, Marital_Status) %>%
+  summarise(Deaths = sum(Deaths))
+
+# Plot 2
+
+marital_time_plot <- ggplot(marital_time, aes(x = Year, y = Deaths, col = factor(Marital_Status))) +
+facet_grid(Marital_Status ~ ., scales = "free_y") + 
+geom_line() + 
+geom_point() + 
+labs(title = "Trends Over time, by Marital Status",
+     x = "Year",
+     y = "Total Deaths",
+     color = "Age") +
+theme(legend.position = "none", title = element_text(size = 10))
+
+grid.arrange(marital_plot, marital_time_plot, ncol=2)
+```
+
+
+```{r}
+data %>%
+  group_by(Year, Age, Marital_Status) %>%
+  summarise(Deaths = sum(Deaths)) %>%
+  ggplot(aes(x = Year, y = Deaths, col = factor(Marital_Status)))+
+  facet_grid(Marital_Status ~ Age, scales = "free_y") + 
+  geom_line() + 
+  geom_point() + 
+  labs(title = "Trends Over time, by Marital Status and Age",
+       x = "Year",
+       y = "Total Deaths",
+       color = "Age") +
+  theme(legend.position = "none", title = element_text(size = 10))
+
+
+
+```
+
+
+```{r}
+smoking_data <- data %>%
+  group_by(Year, Sex) %>%
+  summarise(Smoking_percent = mean(Smoking_percent))
+
+
+smoking_data %>%
+  ggplot(aes(x = Year, y = Smoking_percent, colour=Sex)) + 
+  geom_line() +
+  labs(title = "Percent of smokers by Sex",
+       subtitle = "Trend over time, 1991 - 2018.",
+       x = "Year",
+       y = "Percent of Smokers") + 
+  scale_x_continuous(breaks = seq(1991, 2018, 2))
+
+```
+
+
+Modelling
+```{r}
+head(data)
+```
+
+
+Linear Regression
+
+
+```{r}
+# somehow create a function that gets these linear models for each risk class
+# 1. create function that filters data
+# 2. create function that creates linear model for filtered data
+# 3. create function that circulates through, stores linear models and respective sum of squared residuals
+
+# compare to sum of squared residuals of large model
+
+custom_filter <- function(geo, age, sex, ms, data){
+  data %>%
+    filter(GEO == geo, Age == age, Sex == sex, Marital_Status == ms)
+}
+
+get_lm_model <- function(geo, age, sex, ms, data){
+  filterData <- custom_filter(geo, age, sex, ms, data)
+    lm(Deaths ~ Year + Population + Smoking_percent,
+             data = filterData)
+}
+
+```
+
+
+
+```{r}
+## using the better model to predict deaths in the future
+
+# training data will be from 1991-2015
+# testing from 2016 - 2018
+
+Train_data <- data %>%
+  filter(Year < 2018)
+
+Test_data <- data %>%
+  filter(Year >= 2018)
+```
+
+
+```{r}
+Death_modelPlot_TrainTest <- function(geo, age, sex, ms, train_d, test_d){
+  
+  model_train_data <- custom_filter(geo, age, sex, ms, train_d)
+  model_test_data <- custom_filter(geo, age, sex, ms, test_d)
+  
+  lm <- get_lm_model(geo, age, sex, ms, train_d)
+  
+  ybounds <-  c(min(min(model_train_data$Deaths), min(model_test_data$Deaths), min(predict(lm, model_test_data))) - 5, 
+                max(max(model_train_data$Deaths), max(model_test_data$Deaths), max(predict(lm, model_test_data))) + 5)
+  
+  print(ybounds)
+  print(predict(lm, model_test_data))
+  
+  plot(model_train_data$Year, model_train_data$Deaths, xlab = "Year", xlim=c(1991, 2018),
+       ylab = "Deaths", ylim = ybounds, main="Model Vs Actual")
+  points(model_test_data$Year, predict(lm, model_test_data), col = "blue")
+  points(model_test_data$Year, model_test_data$Deaths, col = "red")
+
+}
+```
+
+
+```{r}
+Death_modelPlot_TrainTest("Ontario", "15-44", "Male", "Single", Train_data, Test_data)
+```
+
+```{r}
+summary(get_lm_model("Ontario", "15-44", "Male", "Single", data))
+```
+
+```{r}
+summary(get_lm_model("Ontario", "15-44", "Male", "Single", Train_data))
+```
+
+
+```{r}
+Death_modelPlot_TrainTest("Ontario", "85+", "Female", "widowed", Train_data, Test_data)
+```
+
+
+```{r}
+geos <- unique(Test_data$GEO)
+ages <- unique(Test_data$Age)
+ms_s <- unique(Test_data$Marital_Status)
+sexes <- unique(Test_data$Sex)
+```
+
+
+```{r}
+# Expected_Deaths <- array(NA, dim=c(length(geos), length(ages), length(ms_s) , length(sexes)))
+
+df <- data.frame(matrix(vector(), 0, 6,
+                dimnames=list(c(), c("Year", "GEO", "Age", "Sex", "marital_Status", "ExpectedDeaths"))),
+                stringsAsFactors=F)
+
+for (a in 1:length(geos)){
+  for (b in 1:length(ages)){
+    for (c in 1:length(ms_s)){
+      for (d in 1:length(sexes)){
+          lm <- get_lm_model(geos[a], ages[b], sexes[d], ms_s[c], Train_data)
+          
+          model_test_data <- custom_filter(geos[a], ages[b], sexes[d], ms_s[c], Test_data)
+          ED <- predict(lm, model_test_data)
+          df <- rbind(df, c(2018, geos[a], ages[b], sexes[d], ms_s[c], ED))
+          
+      }
+    }
+  }
+}
+
+```
+
+```{r}
+Modelled_Deaths <- df %>%
+  as_tibble() %>%
+  rename(Year = "X.2018.",
+         GEO = "X.Alberta.",
+         Age = 'X..15.',
+         Sex = "X.Female.",
+         Marital_Status = 'X.divorced.',
+         ExpectedDeaths = 'X.0.') %>%
+  mutate(Year = as.numeric(Year), ExpectedDeaths = as.numeric(ExpectedDeaths)) 
+  
+```
+
+
+```{r}
+lm_Results <- left_join(Test_data, Modelled_Deaths)
+head(lm_Results)
+```
+
+## Graphs of results
+
+
+```{r}
+library(reshape2)
+
+lm_Results %>%
+  group_by(GEO) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(GEO, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Location",
+       x = "GEO",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  
+
+```
+
+
+```{r}
+lm_Results %>%
+  group_by(Age) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Age, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Age",
+       x = "Age Group",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+lm_Results %>%
+  group_by(Marital_Status) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Marital_Status, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Marital Status",
+       x = "Marital Status",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r}
+lm_Results %>%
+  group_by(Sex) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Sex, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Sex",
+       x = "Sex",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r}
+lm_Results %>%
+  group_by(Year) %>%
+  summarise(Actual_Deaths = sum(Deaths), Expected_Deaths = sum(ExpectedDeaths), percent_error = abs((Actual_Deaths - Expected_Deaths)) / Expected_Deaths) 
+```
+
+
+```{r}
+RMSE(lm_Results$ExpectedDeaths, lm_Results$Deaths) # square root of average of squared deviations
+```
+
+```{r}
+lm_Results %>%
+  filter(GEO == "Ontario") %>%
+  group_by(Year) %>%
+  summarise(Actual_Deaths = sum(Deaths), Expected_Deaths = sum(ExpectedDeaths), percent_error = abs((Actual_Deaths - Expected_Deaths)) / Expected_Deaths)
+```
+
+
+```{r}
+
+lm_Results_ontario <- lm_Results %>% filter(GEO == "Ontario")
+RMSE(lm_Results_ontario$ExpectedDeaths, lm_Results_ontario$Deaths)
+```
+
+
+
+
+## Gradient boost
+
+```{r}
+library(xgboost)
+library(caret)
+```
+
+
+```{r}
+Train_data <- data %>%
+  filter(Year < 2018)
+
+Test_data <- data %>%
+  filter(Year >= 2018)
+```
+
+
+
+```{r}
+get_GB_model <- function(geo, age, sex, ms, data){
+  filterData <- custom_filter(geo, age, sex, ms, data)
+  if(nrow(filterData %>% filter(Deaths != 0)) == 0){0}
+  else{
+      train(
+      Deaths ~ Year + Population + Smoking_percent, data = custom_filter(geo, age, sex, ms, data), method = "xgbTree",
+      trControl = trainControl("cv", number = 10)
+  )
+  }
+}
+```
+
+
+
+
+```{r}
+df2 <- data.frame(matrix(vector(), 0, 6,
+                dimnames=list(c(), c("Year", "GEO", "Age", "Sex", "marital_Status", "ExpectedDeaths"))),
+                stringsAsFactors=F)
+
+# Deaths for Ontario
+
+geo <- "Ontario"
+
+for (b in 1:length(ages)){
+  for (c in 1:length(ms_s)){
+    for (d in 1:length(sexes)){
+        model <- get_GB_model(geo, ages[b], sexes[d], ms_s[c], Train_data)
+        
+        model_test_data <- custom_filter(geo, ages[b], sexes[d], ms_s[c], Test_data)
+        if(class(model) != "numeric"){ED <- predict(model, model_test_data)}
+        else{ED <- 0}
+        df2 <- rbind(df2, c(2018, geo, ages[b], sexes[d], ms_s[c], ED))
+    }
+  }
+}
+```
+
+
+```{r}
+Modelled_Deaths2 <- df2 %>%
+  as_tibble() %>%
+  rename(Year = "X.2018.",
+         GEO = "X.Ontario.",
+         Age = 'X..15.',
+         Sex = "X.Female.",
+         Marital_Status = 'X.divorced.',
+         ExpectedDeaths = 'X.0.') %>%
+  mutate(Year = as.numeric(Year), ExpectedDeaths = as.numeric(ExpectedDeaths))
+```
+
+
+```{r}
+Test_data <- Test_data %>%
+                filter(GEO == geo)
+
+GB_Results <- left_join(Test_data, Modelled_Deaths2)
+head(GB_Results)
+```
+
+```{r}
+GB_Results %>%
+  group_by(Year) %>%
+  summarise(Actual_Deaths = sum(Deaths), Expected_Deaths = sum(ExpectedDeaths), percent_error = abs((Actual_Deaths - Expected_Deaths)) / Expected_Deaths) 
+```
+
+```{r}
+RMSE(GB_Results$ExpectedDeaths, GB_Results$Deaths)
+```
+
+## Graphs of Results
+
+```{r}
+library(reshape2)
+
+GB_Results %>%
+  group_by(Age) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Age, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Age (Ontario)",
+       x = "Age Group",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r}
+GB_Results %>%
+  group_by(Marital_Status) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Marital_Status, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Marital Status (Ontario)",
+       x = "Marital Status",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r}
+GB_Results %>%
+  group_by(Sex) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Sex, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Sex (Ontario)",
+       x = "Sex",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+```{r}
+Death_modelPlot_TrainTest2 <- function(geo, age, sex, ms, train_d, test_d){
+  
+  model_train_data <- custom_filter(geo, age, sex, ms, train_d)
+  model_test_data <- custom_filter(geo, age, sex, ms, test_d)
+  
+  GB_m <- get_GB_model(geo, age, sex, ms, train_d)
+  
+  ybounds <-  c(min(min(model_train_data$Deaths), min(model_test_data$Deaths), min(predict(GB_m, model_test_data))) - 5, 
+                max(max(model_train_data$Deaths), max(model_test_data$Deaths), max(predict(GB_m, model_test_data))) + 5)
+  
+  print(ybounds)
+  print(predict(GB_m, model_test_data))
+  
+  plot(model_train_data$Year, model_train_data$Deaths, xlab = "Year", xlim=c(1991, 2018),
+       ylab = "Deaths", ylim = ybounds, main="Model Vs Actual")
+  points(model_test_data$Year, predict(GB_m, model_test_data), col = "blue")
+  points(model_test_data$Year, model_test_data$Deaths, col = "red")
+
+}
+```
+
+
+```{r}
+Death_modelPlot_TrainTest2("Ontario", "15-44", "Male", "Single", Train_data, Test_data)
+```
+
+
+```{r}
+Death_modelPlot_TrainTest2("Ontario", "85+", "Female", "widowed", Train_data, Test_data)
+```
+
+
+
+
+
+```{r}
+model <- get_GB_model("Ontario", "15-44", "Male", "Single", Train_data)
+model_test_data <- custom_filter("Ontario", "15-44", "Male", "Single", Test_data)
+```
+
+
+```{r}
+predictions <- model %>% predict(model_test_data)
+predictions
+```
+
+```{r}
+RMSE(predictions, model_test_data$Deaths)
+```
+
+
+support vector machines
+
+```{r}
+library(e1071)
+```
+
+
+```{r}
+get_SVM_model <- function(geo, age, sex, ms, data){
+  filterData <- custom_filter(geo, age, sex, ms, data)
+  if(nrow(filterData %>% filter(Deaths != 0)) == 0){0}
+  else{
+    svm(Deaths ~ Year + Population + Smoking_percent, filterData)
+  }
+}
+```
+
+
+```{r}
+df3 <- data.frame(matrix(vector(), 0, 6,
+                dimnames=list(c(), c("Year", "GEO", "Age", "Sex", "marital_Status", "ExpectedDeaths"))),
+                stringsAsFactors=F)
+
+for (a in 1:length(geos)){
+  for (b in 1:length(ages)){
+    for (c in 1:length(ms_s)){
+      for (d in 1:length(sexes)){
+          print(c(geos[a], ages[b], sexes[d], ms_s[c]))
+          svm_m <- get_SVM_model(geos[a], ages[b], sexes[d], ms_s[c], Train_data)
+          
+          model_test_data <- custom_filter(geos[a], ages[b], sexes[d], ms_s[c], Test_data)
+          
+          if(class(svm_m) != "numeric"){ED <- predict(svm_m, model_test_data)}
+          else{ED <- 0}
+          
+          df3 <- rbind(df3, c(2018, geos[a], ages[b], sexes[d], ms_s[c], ED))
+          
+      }
+    }
+  }
+}
+```
+
+
+```{r}
+Modelled_svm_Deaths <- df3 %>%
+  as_tibble() %>%
+  rename(Year = "X.2018.",
+         GEO = "X.Alberta.",
+         Age = 'X..15.',
+         Sex = "X.Female.",
+         Marital_Status = 'X.divorced.',
+         ExpectedDeaths = 'X.0.') %>%
+  mutate(Year = as.numeric(Year), ExpectedDeaths = as.numeric(ExpectedDeaths))
+```
+
+
+```{r}
+svm_Results <- left_join(Test_data, Modelled_svm_Deaths)
+head(svm_Results)
+```
+```{r}
+svm_Results %>%
+  group_by(Year) %>%
+  summarise(Actual_Deaths = sum(Deaths), Expected_Deaths = sum(ExpectedDeaths), percent_error = abs((Actual_Deaths - Expected_Deaths)) / Expected_Deaths) 
+```
+
+
+```{r}
+RMSE(svm_Results$Deaths, svm_Results$ExpectedDeaths)
+```
+
+
+```{r}
+svm_Results %>%
+  filter(GEO == "Ontario") %>%
+  group_by(Year) %>%
+  summarise(Actual_Deaths = sum(Deaths), Expected_Deaths = sum(ExpectedDeaths), percent_error = abs((Actual_Deaths - Expected_Deaths)) / Expected_Deaths) 
+
+```
+
+
+```{r}
+svm_results_Ontario <- svm_Results %>% filter(GEO == "Ontario")
+
+RMSE(svm_results_Ontario$Deaths, svm_results_Ontario$ExpectedDeaths)  
+```
+
+# Visualizations
+
+
+```{r}
+Death_modelPlot_TrainTest3 <- function(geo, age, sex, ms, train_d, test_d){
+  
+  model_train_data <- custom_filter(geo, age, sex, ms, train_d)
+  model_test_data <- custom_filter(geo, age, sex, ms, test_d)
+  
+  SVM_m <- get_SVM_model(geo, age, sex, ms, train_d)
+  
+  ybounds <-  c(min(min(model_train_data$Deaths), min(model_test_data$Deaths), min(predict(SVM_m, model_test_data))) - 5, 
+                max(max(model_train_data$Deaths), max(model_test_data$Deaths), max(predict(SVM_m, model_test_data))) + 5)
+  
+  print(ybounds)
+  print(predict(SVM_m, model_test_data))
+  
+  plot(model_train_data$Year, model_train_data$Deaths, xlab = "Year", xlim=c(1991, 2018),
+       ylab = "Deaths", ylim = ybounds, main="Model Vs Actual")
+  points(model_test_data$Year, predict(SVM_m, model_test_data), col = "blue")
+  points(model_test_data$Year, model_test_data$Deaths, col = "red")
+
+}
+```
+
+
+```{r}
+Death_modelPlot_TrainTest3("Ontario", "15-44", "Male", "Single", Train_data, Test_data)
+```
+
+```{r}
+Death_modelPlot_TrainTest3("Ontario", "85+", "Female", "widowed", Train_data, Test_data)
+```
+
+
+```{r}
+library(reshape2)
+
+svm_Results %>%
+  group_by(GEO) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(GEO, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Location",
+       x = "GEO",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r}
+svm_Results %>%
+  group_by(Age) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Age, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Age",
+       x = "Age Group",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r}
+svm_Results %>%
+  group_by(Marital_Status) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Marital_Status, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Marital Status",
+       x = "Marital Status",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+svm_Results %>%
+  group_by(Sex) %>%
+  summarise(Deaths = sum(Deaths), ExpectedDeaths = sum(ExpectedDeaths)) %>%
+  melt() %>%
+  ggplot(aes(Sex, value, fill=variable)) + 
+       geom_bar(position="dodge", stat = "identity") +
+  labs(title = "Actual Vs Expected Deaths by Sex",
+       x = "Sex",
+       y = "Deaths In 2018",
+       fill = "variable") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
