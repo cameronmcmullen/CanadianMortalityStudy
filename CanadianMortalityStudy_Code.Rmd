@@ -405,6 +405,12 @@ get_lm_model <- function(geo, age, sex, ms, data){
 ```
 
 
+```{r}
+# Risk Class Example
+custom_filter("Ontario", "15-44", "Male", "Single", data)
+```
+
+
 
 ```{r}
 # training data will be from 1991-2017
@@ -583,7 +589,9 @@ lm_Results %>%
 
 
 ```{r}
-RMSE(lm_Results$ExpectedDeaths, lm_Results$Deaths) # square root of average of squared deviations
+library(Metrics)
+
+rmse(lm_Results$ExpectedDeaths, lm_Results$Deaths) # square root of average of squared deviations
 ```
 
 ```{r}
@@ -597,7 +605,7 @@ lm_Results %>%
 ```{r}
 
 lm_Results_ontario <- lm_Results %>% filter(GEO == "Ontario")
-RMSE(lm_Results_ontario$ExpectedDeaths, lm_Results_ontario$Deaths)
+rmse(lm_Results_ontario$ExpectedDeaths, lm_Results_ontario$Deaths)
 ```
 
 
@@ -689,7 +697,7 @@ GB_Results %>%
 ```
 
 ```{r}
-RMSE(GB_Results$ExpectedDeaths, GB_Results$Deaths)
+rmse(GB_Results$ExpectedDeaths, GB_Results$Deaths)
 ```
 
 ## Graphs of Results
@@ -775,9 +783,6 @@ Death_modelPlot_TrainTest2("Ontario", "85+", "Female", "widowed", Train_data, Te
 ```
 
 
-
-
-
 ```{r}
 model <- get_GB_model("Ontario", "15-44", "Male", "Single", Train_data)
 model_test_data <- custom_filter("Ontario", "15-44", "Male", "Single", Test_data)
@@ -788,11 +793,6 @@ model_test_data <- custom_filter("Ontario", "15-44", "Male", "Single", Test_data
 predictions <- model %>% predict(model_test_data)
 predictions
 ```
-
-```{r}
-RMSE(predictions, model_test_data$Deaths)
-```
-
 
 support vector machines
 
@@ -855,6 +855,7 @@ Modelled_svm_Deaths <- df3 %>%
 svm_Results <- left_join(Test_data, Modelled_svm_Deaths)
 head(svm_Results)
 ```
+
 ```{r}
 svm_Results %>%
   group_by(Year) %>%
@@ -863,7 +864,7 @@ svm_Results %>%
 
 
 ```{r}
-RMSE(svm_Results$Deaths, svm_Results$ExpectedDeaths)
+rmse(svm_Results$Deaths, svm_Results$ExpectedDeaths)
 ```
 
 
@@ -879,7 +880,7 @@ svm_Results %>%
 ```{r}
 svm_results_Ontario <- svm_Results %>% filter(GEO == "Ontario")
 
-RMSE(svm_results_Ontario$Deaths, svm_results_Ontario$ExpectedDeaths)  
+rmse(svm_results_Ontario$Deaths, svm_results_Ontario$ExpectedDeaths)  
 ```
 
 # Visualizations
@@ -976,4 +977,6 @@ svm_Results %>%
        fill = "variable") + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
+
+
 
