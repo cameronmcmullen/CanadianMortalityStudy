@@ -218,7 +218,6 @@ graph1 %>%
        y = "Deaths per 100k") + 
   scale_x_continuous(breaks = seq(1991, 2018, 2))
 
-  
 ```
 
 
@@ -439,7 +438,7 @@ Death_modelPlot_TrainTest <- function(geo, age, sex, ms, train_d, test_d){
   print(predict(lm, model_test_data))
   
   plot(model_train_data$Year, model_train_data$Deaths, xlab = "Year", xlim=c(1991, 2018),
-       ylab = "Deaths", ylim = ybounds, main="Model Vs Actual")
+       ylab = "Deaths", ylim = ybounds, main="Predicted Vs Actual Deaths for 2018 (Linear Model)")
   points(model_test_data$Year, predict(lm, model_test_data), col = "blue")
   points(model_test_data$Year, model_test_data$Deaths, col = "red")
 
@@ -765,7 +764,7 @@ Death_modelPlot_TrainTest2 <- function(geo, age, sex, ms, train_d, test_d){
   print(predict(GB_m, model_test_data))
   
   plot(model_train_data$Year, model_train_data$Deaths, xlab = "Year", xlim=c(1991, 2018),
-       ylab = "Deaths", ylim = ybounds, main="Model Vs Actual")
+       ylab = "Deaths", ylim = ybounds, main="Predicted Vs Actual Deaths for 2018 (GB)")
   points(model_test_data$Year, predict(GB_m, model_test_data), col = "blue")
   points(model_test_data$Year, model_test_data$Deaths, col = "red")
 
@@ -901,7 +900,7 @@ Death_modelPlot_TrainTest3 <- function(geo, age, sex, ms, train_d, test_d){
   print(predict(SVM_m, model_test_data))
   
   plot(model_train_data$Year, model_train_data$Deaths, xlab = "Year", xlim=c(1991, 2018),
-       ylab = "Deaths", ylim = ybounds, main="Model Vs Actual")
+       ylab = "Deaths", ylim = ybounds, main="Predicted Vs Actual Deaths for 2018 (SVM)")
   points(model_test_data$Year, predict(SVM_m, model_test_data), col = "blue")
   points(model_test_data$Year, model_test_data$Deaths, col = "red")
 
